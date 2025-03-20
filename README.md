@@ -10,11 +10,11 @@ This repository contains computational analyses of quorum sensing (QS) inhibitor
 
 The repository is organized into the following main directories:
 
-- **Analyses - Code and Data**: Contains R scripts and source data files for classification and regression models for each receptor
-- **Analyses - Published Results**: Contains published model outputs, visualizations, and validated results
-- **Analyses - Whole Datasets - Only Linear Regression**: Contains full dataset analysis using only linear regression models
+- **Analyses - Code and Data**: Contains R scripts and source data files for classification and regression models for each receptor - Use to completely reproduce analyses
+- **Analyses - Published Results**: Contains published model outputs, visualizations, and validated results - Analyses results as they were published in the study
+- **Analyses - Whole Datasets - Only Linear Regression**: Contains full dataset analysis using only linear regression models, for comparison and motivation for the pre-classification step 
 - **Datasets**: Contains raw data files including CREST conformer data, experimental results, and preprocessing scripts
-- **xyz**: Contains molecular structure files in XYZ format, organized by conformer families
+- **xyz**: Contains molecular structure files in XYZ format, organized by conformer families - compressed to a single .zip file
 
 ## Getting Started
 
