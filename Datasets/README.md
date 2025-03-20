@@ -59,14 +59,12 @@ To regenerate the analysis files from raw data:
 1. Ensure all raw data files are in their respective directories
 2. Run the `make_analysis_files.R` script in R or RStudio
 3. Use the functions to generate the necessary files in the appropriate analysis directories:
-    Example - using TraR activity
+4. Place all conformer_#.csv files in a new directory - For example, using TraR's activity
+5. place the Outputs_TraR.csv file in the same directory
 
-   i. Place all conformer_#.csv files in a new directory
-  ii. place the Outputs_TraR.csv file in the same directory
-
-    Run:
-   ```
-   make_analysis_files(outputs_file = 'Outputs_TraR.csv', match_pattern = 'conformer_')
-   filter_datasets_by_threshold(pattern = "conformer_[0-9]+_TraR\\.csv", column_name = 'output', threshold = 15)
-   ```
+6.Run:
+```
+make_analysis_files(outputs_file = 'Outputs_TraR.csv', match_pattern = 'conformer_')
+filter_datasets_by_threshold(pattern = "conformer_[0-9]+_TraR\\.csv", column_name = 'output', threshold = 15)
+```
 
