@@ -1,0 +1,272 @@
+---
+title: "LasR - Classification"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+Load required packages
+ 
+```{r, message=F}
+library(parallel)
+library(rxn.cond.class)
+library(ggplot2)
+```
+
+```{r, include=F}
+reorder_models <- function(df) {
+  # Ensure that the dataframe has the correct column names
+  if (!all(c("Train Accuracy", "Test Accuracy", "LOO-CV", "Stratified-CV") %in% colnames(df))) {
+    stop("Dataframe must contain 'Train Accuracy', 'Test Accuracy', 'LOO-CV', and 'Stratified-CV' columns.")
+  }
+  
+  # Reorder the dataframe based on Test Accuracy (descending), LOO-CV (descending), and Stratified-CV (descending)
+  df_ordered <- df[order(-df$`Test Accuracy`, -df$`LOO-CV`, -df$`Stratified-CV`), ]
+  
+  return(df_ordered)
+}
+
+train_class_models <- function(file, one_ratio, two_ratio) {
+  # Wrap the entire function in a try-catch to handle potential errors
+  result <- tryCatch({
+    # Load the classification data
+    data <- data.frame(data.table::fread(file), check.names = F)
+    row.names(data) <- data[, 1]
+    data <- data[, -1]
+    data$class <- as.factor(data$class)
+    
+    # Check if we have at least two classes with data
+    class_counts <- table(data$class)
+    if (length(class_counts) < 2 || any(class_counts == 0)) {
+      stop(paste("File", file, "needs two or more non-empty classes to fit a multinom model"))
+    }
+    
+    # Split the data into training and testing using 75% of the data for training
+    
+    # Similarity of Class 1 with itself
+    one <- rxn.cond.class::simi.sampler(data, 1, compare.with = 0, sample.size = round(sum(data$class == 1) * one_ratio))
+    
+    # Similarity of Class 2 with itself
+    two <- rxn.cond.class::simi.sampler(data, 2, compare.with = 0, sample.size = round(sum(data$class == 2) * two_ratio))
+    
+    # Combine the training data
+    similarities <- c(one, two)
+    
+    # Lower the dimensionality of the data with a primary feature importance cleanup
+    low.dim.data <- rxn.cond.class::clean_correlated_features(data, corr_threshold = 0.85, method = "mutual_information")
+    
+    Train.set <- low.dim.data[similarities, ]
+    Test.set <- low.dim.data[-similarities, ]
+    valid.indices <- sample(1:nrow(Test.set), 3)
+    valid.set <- Test.set[valid.indices, ]
+    Test.set <- Test.set[-valid.indices, ]
+    
+    # Train the model
+    models <- rxn.cond.class::sub_model_log_Jstat(Train.set, min = 2, max = 2, ordinal = F)
+    
+    # Cross validate and reorder
+    results.summary <- data.frame(matrix(ncol = 5, nrow = 10))
+    
+    names(results.summary) <- c('Train Accuracy', 'Test Accuracy', "LOO-CV", "Stratified-CV", "Valid Indices")
+    test <- NULL
+    for (i in 1:nrow(models)) {
+      test.form <- models[i, 1]
+      
+      # Create a new test variable INSIDE the loop
+      current_test <- tryCatch({
+        # Train the non-ordinal multinomial regression model
+        nnet::multinom(test.form,
+                       data = Train.set,
+                       maxit = 2000, 
+                       trace = FALSE)
+      }, error = function(e) {
+        message("Error in model ", i, ": ", e$message)
+        return(NULL)
+      })
+      
+      # Only proceed if model was created successfully
+      if (!is.null(current_test)) {
+        # compute train accuracy
+        train_result <- tryCatch({
+          mod_info_results <- mod.info(current_test, Train.set, F, TRUE)
+          mod_info_results$accuracy_print
+        }, error = function(e) {
+          message("Error in train accuracy for model ", i, ": ", e$message)
+          return(NA)
+        })
+        
+        # compute test accuracy
+        test_result <- tryCatch({
+          mod_info_results <- mod.info(current_test, Test.set, F, TRUE)
+          mod_info_results$accuracy_print
+        }, error = function(e) {
+          message("Error in test accuracy for model ", i, ": ", e$message)
+          return(NA)
+        })
+        
+        # stratified CV
+        small_class_result <- tryCatch({
+          k.fold.log.iter(formula = test.form, 
+                          data = Train.set, 
+                          ordinal = F, 
+                          stratify = TRUE, 
+                          iterations = 20, 
+                          verbose = F)
+        }, error = function(e) {
+          message("Error in stratified CV for model ", i, ": ", e$message)
+          return(NA)
+        })
+        
+        # leave one out CV
+        loo_result <- tryCatch({
+          k.fold.log.iter(formula = test.form, 
+                          data = Train.set, 
+                          ordinal = F, 
+                          folds = nrow(Train.set), 
+                          stratify = FALSE, 
+                          iterations = 1, 
+                          verbose = F)
+        }, error = function(e) {
+          message("Error in LOO-CV for model ", i, ": ", e$message)
+          return(NA)
+        })
+        
+        # summary
+        results.summary[i, 1:4] <- c(train_result, test_result, loo_result, small_class_result)
+      } else {
+        # If model creation failed, fill with NA
+        results.summary[i, 1:4] <- NA
+      }
+    }
+    
+    results.summary$`Valid Indices` <- rep(list(valid.indices), 10)
+    results.summary <- cbind(models, results.summary)
+    
+    # Return the reordered models
+    reorder_models(results.summary)
+  }, error = function(e) {
+    # Return the error message if any part of the function fails
+    return(paste("Error processing file", file, ":", e$message))
+  })
+  
+  return(result)
+}
+
+parallel_train_models <- function(file_pattern, ..., cores = max(1, parallel::detectCores() - 1)) {
+  # Get the list of files matching the pattern
+  file_list <- list.files(pattern = file_pattern)
+  
+  if (length(file_list) == 0) {
+    stop("No files found matching the pattern: ", file_pattern)
+  }
+  
+  # Limit cores to the number of files
+  cores <- min(cores, length(file_list))
+  
+  # Check operating system and use appropriate parallelization method
+  if (.Platform$OS.type == "windows") {
+    # Windows implementation using parallel::parLapply
+    cl <- parallel::makeCluster(cores)
+    
+    # Capture the dots arguments to pass them to the training function
+    dots_args <- list(...)
+    
+    # Export necessary variables to the cluster
+    parallel::clusterExport(cl, c("train_class_models"), envir = environment())
+    
+    # Export the dots arguments to the cluster
+    if (length(dots_args) > 0) {
+      parallel::clusterExport(cl, names(dots_args), envir = environment())
+    }
+    
+    # Create a wrapper function that includes the dots arguments
+    wrapper_fun <- function(file) {
+      do.call(train_class_models, c(list(file), dots_args))
+    }
+    
+    # Run the function in parallel
+    results <- tryCatch({
+      parallel::parLapply(cl, file_list, wrapper_fun)
+    }, finally = {
+      parallel::stopCluster(cl)
+    })
+    
+    return(results)
+  } else {
+    # Mac/Linux implementation using mclapply
+    # Reset any lingering jobs
+    tryCatch(parallel::mcparallel(NULL, detached = TRUE), error = function(e) NULL)
+    gc()
+    
+    # Use mclapply with the provided arguments
+    results <- parallel::mclapply(file_list, 
+                                 function(x) do.call(train_class_models, c(list(x), list(...))), 
+                                 mc.cores = cores)
+    
+    return(results)
+  }
+}
+
+rank_models <- function(df) {
+  # Create a composite score with weights favoring test accuracy and CV performance
+  df$composite_score <- df$`Train Accuracy`*0.38 +
+                        df$`Test Accuracy`*0.32 + 
+                        df$`LOO-CV`*0.2 + 
+                        df$`Stratified-CV`*0.1
+  
+  # Sort by the composite score
+  sorted_df <- df[order(df$composite_score, decreasing = TRUE), ]
+  
+  # Return the top 10 models
+  return(head(sorted_df, 10))
+}
+```
+
+## Train a binary classification using all data
+
+
+```{r}
+all_models <- parallel_train_models("LasR_class", 
+                                   one_ratio = 0.85, 
+                                   two_ratio = 0.65)
+
+names(all_models) <- list.files(pattern = 'LasR_class')
+
+all_models_with_dataset <- lapply(names(all_models), function(name) {
+  df <- all_models[[name]]
+  df$dataset <- name
+  return(df)
+})
+
+
+# Combine all dataframes using rbind
+combined_all_models <- do.call(rbind, all_models_with_dataset)
+
+# Apply the ranking function to get the top 10 models
+top_models <- rank_models(combined_all_models)
+
+# View the results with key columns
+knitr::kable(top_models)
+
+top_models.tosave <- top_models
+top_models.tosave$`Valid Indices` <- as.character(top_models.tosave$`Valid Indices`)
+
+write.csv(top_models.tosave, 'LasR_class_models.csv')
+
+best_model <- retrain_best_model(top_models_file = 'LasR_class_models.csv',
+                   which_model = 2,
+                   title.of.analysis = 'LasR - Classification Model',
+                   one_ratio = 0.85,
+                   two_ratio = 0.65)
+
+best_model
+
+write.csv(best_model$validation_result, 'Class_validation_set_results_LasR.csv')
+
+ggsave('Class_Confusion_Table.png', best_model$combined_plot, width = 16, height = 11, units = 'in', dpi = 300)
+ggsave('Train_Heatmap.png', best_model$heatmap.train, width = 8, height = 11, units = 'in', dpi = 300)
+ggsave('Test_Heatmap.png', best_model$heatmap.test, width = 8, height = 11, units = 'in', dpi = 300)
+ggsave('Validation_Results_Table.png', best_model$validation_plot, dpi = 300, bg = "white", device = "png")
+```
