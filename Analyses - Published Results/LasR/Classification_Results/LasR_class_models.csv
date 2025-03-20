@@ -1,0 +1,11 @@
+"","formula","Min J Stat","McFadden R2","SmallestClass","Train Accuracy","Test Accuracy","LOO-CV","Stratified-CV","Valid Indices","dataset","composite_score"
+"67","`class` ~ `-1-3-` + `Dihedral(1_2_19_27)`",0.444,0.138,"1",77.78,100,74.07,68.89,"c(7, 9, 8)","conformer_7_LasR_class.csv",81.704
+"47","`class` ~ `diff_NBO_27_29` + `-1-3-`",0.444,0.114,"1",77.78,100,70.37,70,"c(7, 9, 8)","conformer_7_LasR_class.csv",81.075
+"87","`class` ~ `NPA_1` + `dip_x_1`",0.389,0.084,"1",74.07,100,77.78,71.85,"c(7, 9, 8)","conformer_7_LasR_class.csv",81.0725
+"57","`class` ~ `-1-3-` + `Dihedral(1_4_7_8)`",0.444,0.145,"1",77.78,100,70.37,67.96,"c(7, 9, 8)","conformer_7_LasR_class.csv",80.871
+"77","`class` ~ `B1_4_7` + `dip_y_2`",0.389,0.116,"1",77.78,100,66.67,65,"c(7, 9, 8)","conformer_7_LasR_class.csv",79.835
+"17","`class` ~ `dip_x_1` + `para.angle_1`",0.5,0.121,"1",81.48,100,59.26,60.74,"c(7, 9, 8)","conformer_7_LasR_class.csv",79.592
+"35","`class` ~ `-5V6-` + `-23V24-`",0.389,0.14,"1",77.78,100,62.96,60.93,"c(3, 10, 8)","conformer_5_LasR_class.csv",78.686
+"107","`class` ~ `NPA_18` + `dip_x_1`",0.389,0.126,"1",74.07,100,62.96,60.56,"c(7, 9, 8)","conformer_7_LasR_class.csv",76.9795
+"38","`class` ~ `dip_z_1` + `Dihedral(1_4_7_8)`",0.389,0.101,"1",77.78,100,55.56,56.85,"c(6, 7, 2)","conformer_8_LasR_class.csv",76.798
+"15","`class` ~ `diff_NBO_2_18` + `-23V24-`",0.444,0.155,"1",81.48,87.5,59.26,60.37,"c(3, 10, 8)","conformer_5_LasR_class.csv",76.43
