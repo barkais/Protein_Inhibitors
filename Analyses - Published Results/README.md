@@ -14,9 +14,12 @@ Analyses - Published Results/
 ├── LuxR/
 │   ├── Classification_results/
 │   └── Regression_Results/
-└── TraR/
-    ├── Classification_Results/
-    └── Regression_Results/
+|── TraR/
+|   ├── Classification_Results/
+|   └── Regression_Results/
+|── Datasets/
+└── Reproduce_Results.Rmd
+
 ```
 
 ## Classification Results
@@ -44,3 +47,14 @@ Each regression results directory includes subdirectories for individual conform
 - Each contains:
   - `models_list.csv`: List of models evaluated
   - `predictions.csv`: Prediction results for that specific conformer
+
+## Datasets
+
+For each receptor, the following types of data files are available:
+
+- `conformer_X_RECEPTOR_class.csv`: Classification dataset of the published model
+- `conformer_X_RECEPTOR_above_15.csv`: Regression dataset of the published model
+
+### Reproduce_Results.Rmd
+
+An R notebook for the exact reproduction of puslished results. Should be run after downloading all files in this directory. 
