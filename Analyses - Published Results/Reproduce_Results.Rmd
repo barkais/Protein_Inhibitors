@@ -1,0 +1,562 @@
+---
+title: "Reproduce Published Results"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+ 
+```{r functions, include=F}
+oos_validation_table <- function(oos_data, 
+                                 plot.title = "Out-of-Sample Validation",
+                                 subtitle = "Predicted vs Measured Values",
+                                 conformation = "",
+                                 error_threshold = 20) {  # Threshold to consider errors acceptable
+  
+  # Required packages
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("ggplot2 package is required")
+  }
+  
+  # Make a copy of the input data
+  df <- oos_data
+  
+  # Add a column to mark errors below threshold as acceptable
+  df$Acceptable <- abs(df$`OOS Error`) <= error_threshold
+  
+  # Calculate the percentage of acceptable predictions
+  accuracy_pct <- round(mean(df$Acceptable) * 100, 1)
+  
+  # Calculate mean absolute error (MAE)
+  mae <- round(mean(abs(df$`OOS Error`)), 1)
+  
+  # Number of rows
+  n_rows <- nrow(df)
+  
+  # Format the ggplot - starting with an empty plot
+  plot <- ggplot2::ggplot() +
+    
+    # Set up the grid for the table - with equal-height cells
+    # Bottom of table at y=0, top of table at y=n_rows
+    
+    # Vertical grid lines (columns)
+    ggplot2::geom_segment(
+      data = data.frame(x = c(0, 1, 2, 3, 4)),
+      mapping = ggplot2::aes(
+        x = x, xend = x,
+        y = 0, yend = n_rows
+      ),
+      color = "black", size = 0.5
+    ) +
+    
+    # Horizontal grid lines (rows) - with EQUAL height cells
+    ggplot2::geom_segment(
+      data = data.frame(y = 0:n_rows),
+      mapping = ggplot2::aes(
+        x = 0, xend = 4,
+        y = y, yend = y
+      ),
+      color = "black", size = 0.5
+    ) +
+    
+    # Column headers directly at the top of the table
+    ggplot2::geom_text(
+      data = data.frame(
+        x = c(0.5, 1.5, 2.5, 3.5),
+        y = rep(n_rows + 0.5, 4),
+        label = c("", "Pred", "Exp", "Error"),
+        stringsAsFactors = FALSE
+      ),
+      mapping = ggplot2::aes(
+        x = x, y = y,
+        label = label
+      ),
+      size = 4.5, fontface = "bold"
+    ) +
+    
+    # Compound names
+    ggplot2::geom_text(
+      data = data.frame(
+        x = rep(0.5, n_rows),
+        y = n_rows:1 - 0.5,  # Reverse order for y to match the table image
+        label = rownames(df),
+        stringsAsFactors = FALSE
+      ),
+      mapping = ggplot2::aes(
+        x = x, y = y,
+        label = label
+      ),
+      size = 4, fontface = "bold"
+    ) +
+    
+    # Predicted values
+    ggplot2::geom_text(
+      data = data.frame(
+        x = rep(1.5, n_rows),
+        y = n_rows:1 - 0.5,  # Reverse order for y
+        label = df$`OOS Pred`,
+        stringsAsFactors = FALSE
+      ),
+      mapping = ggplot2::aes(
+        x = x, y = y,
+        label = label
+      ),
+      size = 4
+    ) +
+    
+    # Measured values
+    ggplot2::geom_text(
+      data = data.frame(
+        x = rep(2.5, n_rows),
+        y = n_rows:1 - 0.5,  # Reverse order for y
+        label = df$`OOS Measured`,
+        stringsAsFactors = FALSE
+      ),
+      mapping = ggplot2::aes(
+        x = x, y = y,
+        label = label
+      ),
+      size = 4
+    ) +
+    
+    # Error values with color coding
+    ggplot2::geom_text(
+      data = data.frame(
+        x = rep(3.5, n_rows),
+        y = n_rows:1 - 0.5,  # Reverse order for y
+        label = df$`OOS Error`,
+        acceptable = df$Acceptable,
+        stringsAsFactors = FALSE
+      ),
+      mapping = ggplot2::aes(
+        x = x, y = y,
+        label = label,
+        color = ifelse(acceptable, "#008000", "#FF0000")
+      ),
+      size = 4, fontface = "bold"
+    ) +
+    
+    # Use colors directly
+    ggplot2::scale_color_identity() +
+    
+    # Set limits to include headers above the table
+    ggplot2::xlim(-0.5, 4.5) +
+    ggplot2::ylim(-0.5, n_rows + 1) +
+    
+    # Theme customization
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 14, hjust = 0.5),
+      # Center the caption with hjust = 0.5 and add top margin
+      plot.caption = ggplot2::element_text(size = 10, hjust = 0.5, margin = ggplot2::margin(t = 15)),
+      plot.margin = ggplot2::margin(15, 15, 15, 15)
+    ) +
+    
+    # Add title, subtitle and caption
+    ggplot2::labs(
+      title = plot.title,
+      subtitle = subtitle,
+      caption = paste0(
+        "Mean Absolute Error: ", mae, 
+        " | Predictions within threshold: ", accuracy_pct, "%",
+        if(nchar(conformation) > 0) paste0("\n", conformation) else ""
+      )
+    ) +
+    
+    # Set aspect ratio - make cells rectangular but maintain fixed width-to-height ratio
+    ggplot2::coord_fixed(ratio = 0.33, clip = "off")
+  
+  return(plot)
+}
+
+generate_LR_report <- function(dataset,
+                               model.list,
+                               out.col = 'output',
+                               leave.out,
+                               what.model = 1,
+                               save.pred = T,
+                               plot_title = "Linear Regression Model Reproduction") {
+  default::default(data.frame) <- list(check.names = FALSE)
+  mod_data <- data.frame(data.table::fread(dataset, header = T))
+  RN <- mod_data[,1]
+  mod_data <- mod_data[,-1]
+  mod_data <- mod_data[complete.cases(mod_data), ]
+  CN <- names(mod_data)
+  out.col <- which(CN == out.col)
+  mod_data <- data.frame(cbind(scale(mod_data[,-out.col], T, T), mod_data[, out.col]))
+  names(mod_data)[1:(ncol(mod_data) - 1)] <- CN[-out.col]
+  names(mod_data)[ncol(mod_data)] <- CN[out.col]
+  row.names(mod_data) <- RN
+  pred_data <- mod_data[row.names(mod_data) %in% leave.out, ]
+  mod_data <- mod_data[!(row.names(mod_data) %in% leave.out), ]
+  models <- data.frame(data.table::fread(model.list))
+  mod.sum <- summary(lm(models$formula[what.model], mod_data))$coefficients
+  cat('
+  Model Coefficients')
+  colnames(mod.sum)[4] <- 'p value'
+  k.mod <- knitr::kable(mod.sum)
+  print(k.mod)
+  cv_3fold <- model.cv(models$formula[what.model], mod_data, dim(mod_data)[2], 3, 50)
+  dt3 <- data.frame(cv_3fold[[2]], cv_3fold[[1]])
+  names(dt3) <- c('Q2', 'MAE')
+  cat('
+  3-fold CV')
+  tab_dt3 <- knitr::kable(dt3)
+  print(tab_dt3)
+  cv_5fold <- model.cv(models$formula[what.model], mod_data, dim(mod_data)[2], 5, 50)
+  dt5 <- data.frame(cv_5fold[[2]], cv_5fold[[1]])
+  names(dt5) <- c('Q2', 'MAE')
+  cat('
+  5-fold CV')
+  tab_dt5 <- knitr::kable(dt5)
+  print(tab_dt5)
+  
+  cv_loo <- model.cv(models$formula[what.model], mod_data, dim(mod_data)[2], nrow(mod_data), 1)
+  dtloo <- data.frame(cv_loo[[2]], cv_loo[[1]])
+  names(dt3) <- c('Q2', 'MAE')
+  cat('
+  LOO-CV')
+  tab_dtloo <- knitr::kable(dtloo)
+  print(tab_dtloo)
+
+  
+  mod_data_unn <- data.frame(data.table::fread(dataset, header = T))
+  mod.sum.unnormalized <- summary(lm(models$formula[what.model], mod_data_unn))$coefficients
+  cat('
+  Unnormalized Data Model Coefficients')
+  colnames(mod.sum.unnormalized)[4] <- 'p value'
+  k.mod.unn <- knitr::kable(mod.sum.unnormalized)
+  print(k.mod.unn)
+  
+  ## model.plot
+  info.table <- data.frame(matrix(ncol = 1, nrow = 4))
+  info.table[1,1] <- as.character(round(models$R.sq[what.model], 2))
+  info.table[2,1] <- as.character(round(dtloo[1, 1], 2))
+  info.table[3,1] <- as.character(round(dt5[1, 1], 2))
+  info.table[4,1] <- as.character(round(dt3[1, 1], 2))
+  row.names(info.table) <-  c('R2', 'Q2_loo', 'Q2_5fold', 'Q2_3fold')
+  names(info.table) <- 'stats'
+  text1 <- paste(row.names(info.table)[1], info.table[1,1], sep = ' = ')
+  text2 <- paste(row.names(info.table)[2], info.table[2,1], sep = ' = ')
+  text3 <- paste(row.names(info.table)[3], info.table[3,1], sep = ' = ')
+  text4 <- paste(row.names(info.table)[4], info.table[4,1], sep = ' = ')
+  
+  annotations <- stringr::str_c(c(text1,
+                                  text2,
+                                  text3,
+                                  text4),
+                                collapse = "\n")
+  
+  model = models$formula[what.model]
+  best.mod <- lm(model, data = mod_data)
+  pred_interval <- predict(best.mod,
+                           newdata = mod_data,
+                           interval = 'pre',
+                           level = 0.9)
+  plot.dat <- data.frame(cbind(mod_data[dim(mod_data)[2]], pred_interval))
+  colnames(plot.dat) <- c('Measured', 'Predicted', 'lwr', 'upr')
+  rownames(plot.dat) <- row.names(mod_data)
+  
+  row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"o_",'2-')
+  row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"m_",'3-')
+  row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"p_",'4-')
+  row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"o4-",'2,4-')
+  row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"m3-",'3,5-')
+  row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"o3-",'2,3-')
+  
+  plot.dat <- dplyr::mutate(plot.dat, Position = rep(NA, nrow(plot.dat)))
+  
+  for (i in 1:nrow(mod_data)) {
+    if (grepl('3-',row.names(plot.dat)[i])) {
+      plot.dat[i,5] <- 'meta'
+    }
+    if (grepl('5-',row.names(plot.dat)[i])) {
+      plot.dat[i,5] <- 'meta'
+    }
+    if (grepl('2-',row.names(plot.dat)[i])) {
+      plot.dat[i,5] <- 'ortho'
+    }
+    if (grepl('basic',row.names(plot.dat)[i])) {
+      plot.dat[i,5] <- 'Ph'
+    }
+    if (grepl('penta_F',row.names(plot.dat)[i])) {
+      plot.dat[i,5] <- 'C6F5'
+    }
+    if (grepl('4-',row.names(plot.dat)[i])) {
+      plot.dat[i,5] <- 'para'
+    }
+  }
+  plot.dat <- dplyr::mutate(plot.dat, label = row.names(plot.dat))
+  
+  plot.dat <- dplyr::mutate(plot.dat, 
+                            shapes = c(rep(18, nrow(mod_data))))
+  
+  
+  # Calculate absolute errors
+  plot.dat$error <- abs(plot.dat$Measured - plot.dat$Predicted)
+  # Create label vector that only includes points with large errors
+  plot.dat$show_label <- ifelse(plot.dat$error > 15, plot.dat$label, "")
+  
+  # Extract dataset name (without path and extension) for subtitle
+  dataset_name <- basename(dataset)
+  dataset_name <- sub("\\.[^.]*$", "", dataset_name)
+  
+  # Get model formula as string for subtitle
+  model_formula_str <- as.character(models$formula[what.model])
+  
+  # Store for plot subtitles
+  plot_subtitle1 <- paste("Model:", model_formula_str)
+  plot_subtitle2 <- paste("Dataset:", dataset_name)
+  
+  # Calculate plot limits for proper legend positioning and for x/y limits
+  x_min <- min(plot.dat[1:nrow(mod_data),3])
+  x_max <- max(plot.dat[1:nrow(mod_data),4])
+  y_min <- min(plot.dat[1:nrow(mod_data),3])
+  y_max <- max(plot.dat[1:nrow(mod_data),4])
+  
+  plot <- suppressMessages(ggplot2::ggplot(plot.dat, ggplot2::aes(x = Measured, y = Predicted)) +
+                             ggplot2::geom_point(size = 2, shape = plot.dat$shapes, ggplot2::aes(color = Position)) +
+                             ggplot2::stat_smooth(ggplot2::aes(y = lwr), color = "cadetblue", linetype = "dashed",
+                                                  se = F, method = 'lm', fullrange = T, size = 0.8) +
+                             ggplot2::stat_smooth(ggplot2::aes(y = upr), color = "cadetblue", linetype = "dashed",
+                                                  se = F, method = 'lm', fullrange = T, size = 0.8) +
+                             ggplot2::labs(x = 'Measured',
+                                           y = 'Predicted',
+                                           title = plot_title, 
+                                           subtitle = paste(plot_subtitle1, "\n", plot_subtitle2)) +
+                             ggplot2::stat_smooth(method = 'lm',se = F, formula = y~x,
+                                                  color = 'black',fullrange = T, linetype = 'dashed') +
+                             ggplot2::theme(axis.line.x = ggplot2::element_line(linewidth = 1, colour = "black"),
+                                            axis.line.y = ggplot2::element_line(linewidth = 1, colour = "black"),
+                                            axis.text.x = ggplot2::element_text(colour = "black", size = 12,face = 'bold'),
+                                            axis.text.y = ggplot2::element_text(colour = "black", size = 12,face = 'bold'),
+                                            axis.title.x = ggplot2::element_text(colour = "black", size = 12,face = 'bold'),
+                                            axis.title.y = ggplot2::element_text(colour = "black", size = 12,face = 'bold'),
+                                            panel.grid.major = ggplot2::element_blank(),
+                                            panel.grid.minor = ggplot2::element_blank(),
+                                            panel.border = ggplot2::element_blank(), 
+                                            panel.background = ggplot2::element_blank(),
+                                            # Position legend at the bottom right inside the plot
+                                            legend.position = c(0.85, 0.15),
+                                            legend.justification = c(0.5, 0.5),
+                                            legend.background = ggplot2::element_blank(),
+                                            legend.key = ggplot2::element_blank(),
+                                            legend.key.size = unit(0.8, "lines"),
+                                            legend.title = ggplot2::element_text(size = 10),
+                                            legend.text = ggplot2::element_text(size = 9),
+                                            # Title and subtitle styling
+                                            plot.title = ggplot2::element_text(size = 14, face = "bold", hjust = 0.5),
+                                            plot.subtitle = ggplot2::element_text(size = 10, hjust = 0.5)) +
+                             ggplot2::scale_color_manual('', values = c(Ph = "black", meta = 'tan1', C6F5 = 'darkgrey',
+                                                                        para = '#66a182',ortho = '#d1495b', external = 'steelblue4')) +
+                             ggplot2::xlim(x_min, x_max) +
+                             ggplot2::ylim(y_min, y_max) +
+                             ggplot2::coord_fixed(ratio = 1) +
+                             ggrepel::geom_text_repel(
+                               data = subset(plot.dat, error > 13),
+                               aes(label = label),
+                               size = 3,
+                               min.segment.length = Inf,
+                               seed = 42,
+                               point.padding = 0.4,
+                               segment.color = 'grey50',
+                               force_pull = 0.02,
+                               nudge_x = 0.022,
+                               direction = 'y'
+                             ) +
+                             ggplot2::theme(text = ggplot2::element_text(family = 'Arial')) +
+                             ggplot2::annotate('text',
+                                               x = min(plot.dat[1:nrow(mod_data),3]),
+                                               y = max(plot.dat[1:nrow(mod_data),2]), label = annotations,
+                                               parse = F,
+                                               hjust = "left", vjust = 0))
+  plot
+  
+  
+  prediction <- round(predict(lm(models$formula[what.model], mod_data), pred_data), 0)
+  real <- pred_data[, dim(mod_data)[2]]
+  RMSE <- round(sqrt((real-prediction)^2), 0)
+  prd.tab <- data.frame(prediction, real, RMSE)
+  names(prd.tab) <- c('OOS Pred', 'OOS Measured', 'OOS Error')
+  if (save.pred == T) write.csv(prd.tab, "OOS_predictions.csv", row.names = TRUE)
+  k.prd.tab <- knitr::kable(prd.tab)
+  print(k.prd.tab)
+  
+  print(knitr::kable(data.frame('Mean of RMSE' = mean(RMSE))))
+  
+  oos_data <- prd.tab[, 1:2]
+  
+  row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"o_",'2-')
+  row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"m_",'3-')
+  row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"p_",'4-')
+  row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"o4-",'2,4-')
+  row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"m3-",'3,5-')
+  row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"o3-",'2,3-')
+  row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"basic",'Ph')
+  row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"penta_F",'C6F5')
+  
+  print(oos_validation_table(prd.tab))
+  
+  # Final plot with out-of-sample points
+  plot + 
+    ggplot2::geom_point(data = oos_data,
+                        ggplot2::aes(x = `OOS Measured`, y = `OOS Pred`,
+                                     color = "Out-of-Sample"),  # Added color aesthetic
+                        size = 1.7,
+                        shape = 19) +
+    ggplot2::scale_color_manual('', values = c(Ph = "black", 
+                                               C6F5 = "darkgrey",
+                                               meta = 'tan1',
+                                               para = '#66a182', 
+                                               ortho = '#d1495b', 
+                                               external = 'steelblue4',
+                                               "Out-of-Sample" = "cadetblue3")) +  # Added out-of-sample color
+    ggrepel::geom_text_repel(data = oos_data,
+                             ggplot2::aes(x = `OOS Measured`, y = `OOS Pred`, 
+                                          label = rownames(oos_data)),
+                             size = 3,
+                             min.segment.length = Inf,
+                             seed = 42,
+                             point.padding = 0.4,
+                             segment.color = 'cadetblue3',
+                             force_pull = 0.01,
+                             nudge_y = -0.022,
+                             direction = 'y')
+}
+```
+
+```{r, message=T, include=F}
+
+# R Package Setup for Molecular Modeling Analysis
+# This script checks for required packages, installs missing ones, and loads them
+
+# Function to check if packages are installed and install if needed
+check_and_install <- function(pkg_name, github = FALSE, github_repo = NULL) {
+  if (!require(pkg_name, character.only = TRUE, quietly = TRUE)) {
+    message(paste0("Package '", pkg_name, "' is not installed. Installing now..."))
+    
+    if (github) {
+      if (!require("remotes", quietly = TRUE)) {
+        install.packages("remotes")
+        library(remotes)
+      }
+      remotes::install_github(github_repo)
+    } else {
+      install.packages(pkg_name)
+    }
+    
+    # Try loading the package again
+    if (require(pkg_name, character.only = TRUE, quietly = TRUE)) {
+      message(paste0("Package '", pkg_name, "' has been successfully installed and loaded."))
+    } else {
+      warning(paste0("Failed to install or load package '", pkg_name, "'."))
+    }
+  } else {
+    message(paste0("Package '", pkg_name, "' is already installed and loaded."))
+  }
+}
+
+# 1. Check and install standard CRAN packages
+check_and_install("ggplot2")
+check_and_install("remotes")
+
+# 2. Check and install GitHub packages
+check_and_install("rxn.cond.class", TRUE, "https://github.com/barkais/rxn.cond.class.git")
+check_and_install("moleculaR", TRUE, "https://github.com/barkais/moleculaR.git")
+
+# Success message
+message("\nSetup complete! All required packages and functions are now installed and loaded.")
+```
+
+# Reproduction of Published Models
+
+## TraR Reproduction
+
+```{r TraR, warning=FALSE}
+
+setwd('Datasets/')
+### Classification 
+retrain_best_model('../TraR/Classification_Results/TraR_class_models.csv',
+                   which_model = 1,
+                   title.of.analysis = 'TraR - Classification Reproduction',
+                   one_ratio = 0.85,
+                   two_ratio = 0.65)
+
+### Regression
+leave.out <- c("o_Naph", "p_SCF3", "p_I", "p_Me", "p_azide") # Validation Set extraction from data
+model.list <- "../TraR/Regression_Results/TraR_above_15_top_models_4_4_LO_5.csv" # List of top-10 models 
+out.col = 'output' # Column name holding output data
+what.model = 1 # Chosen model to reproduce
+dataset <- read.csv(model.list)$dataset[what.model] # Call for the feature dataset corresponding with the chosen model
+
+generate_LR_report(dataset = dataset,
+                   model.list = model.list,
+                   out.col = out.col,
+                   leave.out = leave.out,
+                   what.model = what.model,
+                   save.pred = F,
+                   plot_title = 'TraR - Linear Regression Reproduction')
+setwd('../')
+
+```
+
+## LasR Reproduction
+
+```{r LasR, warning=FALSE}
+
+setwd('Datasets/')
+### Classification 
+retrain_best_model('../LasR/Classification_Results/LasR_class_models.csv',
+                   which_model = 1,
+                   title.of.analysis = 'LasR - Classification Reproduction',
+                   one_ratio = 0.85,
+                   two_ratio = 0.65)
+
+### Regression
+leave.out <- c("o_Naph", "p_SCF3", "p_I", "p_Cl", "p_azide") # Validation Set extraction from data
+model.list <- "../LasR/Regression_Results/LasR_above_15_top_models_4_4_LO_5.csv" # List of top-10 models 
+out.col = 'output' # Column name holding output data
+what.model = 1 # Chosen model to reproduce
+dataset <- read.csv(model.list)$dataset[what.model] # Call for the feature dataset corresponding with the chosen model
+
+generate_LR_report(dataset = dataset,
+                   model.list = model.list,
+                   out.col = out.col,
+                   leave.out = leave.out,
+                   what.model = what.model,
+                   save.pred = F,
+                   plot_title = 'LasR - Linear Regression Reproduction')
+setwd('..')
+
+```
+
+## LuxR Reproduction
+
+```{r LuxR, warning=FALSE}
+
+setwd('Datasets/')
+### Classification 
+retrain_best_model('../LuxR/Classification_Results/LuxR_class_models.csv',
+                   which_model = 3,
+                   title.of.analysis = 'LuxR - Classification Reproduction',
+                   one_ratio = 0.75,
+                   two_ratio = 0.65)
+
+### Regression
+leave.out <- c("m_Br", "m_Me", "p_Cl", "p_tfm", 'o_nitro') # Validation Set extraction from data
+model.list <- "../LuxR/Regression_Results/LuxR_above_15_top_models_4_4_LO_5.csv" # List of top-10 models 
+out.col = 'output' # Column name holding output data
+what.model = 1 # Chosen model to reproduce
+dataset <- read.csv(model.list)$dataset[what.model] # Call for the feature dataset corresponding with the chosen model
+
+generate_LR_report(dataset = dataset,
+                   model.list = model.list,
+                   out.col = out.col,
+                   leave.out = leave.out,
+                   what.model = what.model,
+                   save.pred = F,
+                   plot_title = 'LasR - Linear Regression Reproduction')
+
+setwd('..')
+```
+
