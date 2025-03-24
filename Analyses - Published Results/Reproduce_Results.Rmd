@@ -8,7 +8,7 @@ editor_options:
 ```{r functions, include=F}
 oos_validation_table <- function(oos_data, 
                                  plot.title = "Out-of-Sample Validation",
-                                 subtitle = "Predicted vs Measured Values",
+                                 subtitle = "Predicted vs Measured Values (Inhibiton %)",
                                  conformation = "",
                                  error_threshold = 20) {  # Threshold to consider errors acceptable
   
@@ -31,6 +31,16 @@ oos_validation_table <- function(oos_data,
   
   # Number of rows
   n_rows <- nrow(df)
+  
+  # Function to add percentage signs to numeric values
+  add_percent <- function(x) {
+    # Check if value is numeric (or can be converted to numeric)
+    if (!is.na(suppressWarnings(as.numeric(x)))) {
+      return(paste0(x, "%"))
+    } else {
+      return(x)
+    }
+  }
   
   # Format the ggplot - starting with an empty plot
   plot <- ggplot2::ggplot() +
@@ -88,12 +98,12 @@ oos_validation_table <- function(oos_data,
       size = 4, fontface = "bold"
     ) +
     
-    # Predicted values
+    # Predicted values with % sign added
     ggplot2::geom_text(
       data = data.frame(
         x = rep(1.5, n_rows),
         y = n_rows:1 - 0.5,  # Reverse order for y
-        label = df$`OOS Pred`,
+        label = sapply(df$`OOS Pred`, add_percent),
         stringsAsFactors = FALSE
       ),
       mapping = ggplot2::aes(
@@ -103,12 +113,12 @@ oos_validation_table <- function(oos_data,
       size = 4
     ) +
     
-    # Measured values
+    # Measured values with % sign added
     ggplot2::geom_text(
       data = data.frame(
         x = rep(2.5, n_rows),
         y = n_rows:1 - 0.5,  # Reverse order for y
-        label = df$`OOS Measured`,
+        label = sapply(df$`OOS Measured`, add_percent),
         stringsAsFactors = FALSE
       ),
       mapping = ggplot2::aes(
@@ -118,12 +128,12 @@ oos_validation_table <- function(oos_data,
       size = 4
     ) +
     
-    # Error values with color coding
+    # Error values with color coding and % sign added
     ggplot2::geom_text(
       data = data.frame(
         x = rep(3.5, n_rows),
         y = n_rows:1 - 0.5,  # Reverse order for y
-        label = df$`OOS Error`,
+        label = sapply(df$`OOS Error`, add_percent),
         acceptable = df$Acceptable,
         stringsAsFactors = FALSE
       ),
@@ -157,7 +167,7 @@ oos_validation_table <- function(oos_data,
       title = plot.title,
       subtitle = subtitle,
       caption = paste0(
-        "Mean Absolute Error: ", mae, 
+        "Mean Absolute Error: ", mae, "%", 
         " | Predictions within threshold: ", accuracy_pct, "%",
         if(nchar(conformation) > 0) paste0("\n", conformation) else ""
       )
@@ -320,8 +330,8 @@ generate_LR_report <- function(dataset,
                                                   se = F, method = 'lm', fullrange = T, size = 0.8) +
                              ggplot2::stat_smooth(ggplot2::aes(y = upr), color = "cadetblue", linetype = "dashed",
                                                   se = F, method = 'lm', fullrange = T, size = 0.8) +
-                             ggplot2::labs(x = 'Measured',
-                                           y = 'Predicted',
+                             ggplot2::labs(x = 'Measured Inhibition %',
+                                           y = 'Predicted Inhibition %',
                                            title = plot_title, 
                                            subtitle = paste(plot_subtitle1, "\n", plot_subtitle2)) +
                              ggplot2::stat_smooth(method = 'lm',se = F, formula = y~x,
@@ -470,6 +480,30 @@ message("\nSetup complete! All required packages and functions are now installed
 
 # Reproduction of Published Models
 
+## Whole Data - LuxR Failed Model - Reproduction
+
+```{r LuxR - Full Data, warning=FALSE}
+
+setwd('Datasets/')
+
+### Regression
+leave.out <- c("m_Br", "m_Me", "p_Cl", "p_tfm", 'o_nitro') # Validation Set extraction from data
+model.list <- "../LuxR/Regression_Results_Whole_data/LuxR_top_models_4_4_LO_5.csv" # List of top-10 models 
+out.col = 'output' # Column name holding output data
+what.model = 1 # Chosen model to reproduce
+dataset <- read.csv(model.list)$dataset[what.model] # Call for the feature dataset corresponding with the chosen model
+
+generate_LR_report(dataset = dataset,
+                   model.list = model.list,
+                   out.col = out.col,
+                   leave.out = leave.out,
+                   what.model = what.model,
+                   save.pred = F,
+                   plot_title = 'Linear Regression Model Analysis')
+setwd('../')
+
+```
+
 ## TraR Reproduction
 
 ```{r TraR, warning=FALSE}
@@ -495,7 +529,7 @@ generate_LR_report(dataset = dataset,
                    leave.out = leave.out,
                    what.model = what.model,
                    save.pred = F,
-                   plot_title = 'TraR - Linear Regression Reproduction')
+                   plot_title = 'TraR - Linear Regression Analysis')
 setwd('../')
 
 ```
@@ -525,7 +559,7 @@ generate_LR_report(dataset = dataset,
                    leave.out = leave.out,
                    what.model = what.model,
                    save.pred = F,
-                   plot_title = 'LasR - Linear Regression Reproduction')
+                   plot_title = 'LasR - Linear Regression Analysis')
 setwd('..')
 
 ```
@@ -555,7 +589,7 @@ generate_LR_report(dataset = dataset,
                    leave.out = leave.out,
                    what.model = what.model,
                    save.pred = F,
-                   plot_title = 'LasR - Linear Regression Reproduction')
+                   plot_title = 'LuxR - Linear Regression Analysis')
 
 setwd('..')
 ```
