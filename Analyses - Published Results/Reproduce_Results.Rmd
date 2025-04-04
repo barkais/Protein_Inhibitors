@@ -185,7 +185,7 @@ generate_LR_report <- function(dataset,
                                leave.out,
                                what.model = 1,
                                save.pred = T,
-                               plot_title = "Linear Regression Model Reproduction") {
+                               plot_title = "Linear Regression Model") {
   default::default(data.frame) <- list(check.names = FALSE)
   mod_data <- data.frame(data.table::fread(dataset, header = T))
   RN <- mod_data[,1]
@@ -201,6 +201,9 @@ generate_LR_report <- function(dataset,
   mod_data <- mod_data[!(row.names(mod_data) %in% leave.out), ]
   models <- data.frame(data.table::fread(model.list))
   mod.sum <- summary(lm(models$formula[what.model], mod_data))$coefficients
+  VIF <- car::vif(lm(models$formula[what.model], mod_data))
+  formula_vars <- stringr::str_remove_all(names(mod.sum[, 1])[-1], '`')
+  cor_mat <- generate_cor_mat_LR(mod_data, formula_vars)
   cat('
   Model Coefficients')
   colnames(mod.sum)[4] <- 'p value'
@@ -223,7 +226,7 @@ generate_LR_report <- function(dataset,
   
   cv_loo <- model.cv(models$formula[what.model], mod_data, dim(mod_data)[2], nrow(mod_data), 1)
   dtloo <- data.frame(cv_loo[[2]], cv_loo[[1]])
-  names(dt3) <- c('Q2', 'MAE')
+  names(dtloo) <- c('Q2', 'MAE')
   cat('
   LOO-CV')
   tab_dtloo <- knitr::kable(dtloo)
@@ -237,6 +240,10 @@ generate_LR_report <- function(dataset,
   colnames(mod.sum.unnormalized)[4] <- 'p value'
   k.mod.unn <- knitr::kable(mod.sum.unnormalized)
   print(k.mod.unn)
+  
+  cat('
+  Variance Inflation Factor (VIF)')
+  print(knitr::kable(VIF))
   
   ## model.plot
   info.table <- data.frame(matrix(ncol = 1, nrow = 4))
@@ -273,6 +280,7 @@ generate_LR_report <- function(dataset,
   row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"o4-",'2,4-')
   row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"m3-",'3,5-')
   row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"o3-",'2,3-')
+  row.names(plot.dat) <- stringr::str_replace(row.names(plot.dat),"basic",'Ph')
   
   plot.dat <- dplyr::mutate(plot.dat, Position = rep(NA, nrow(plot.dat)))
   
@@ -286,7 +294,7 @@ generate_LR_report <- function(dataset,
     if (grepl('2-',row.names(plot.dat)[i])) {
       plot.dat[i,5] <- 'ortho'
     }
-    if (grepl('basic',row.names(plot.dat)[i])) {
+    if (grepl('Ph',row.names(plot.dat)[i])) {
       plot.dat[i,5] <- 'Ph'
     }
     if (grepl('penta_F',row.names(plot.dat)[i])) {
@@ -406,6 +414,7 @@ generate_LR_report <- function(dataset,
   row.names(oos_data) <- stringr::str_replace(row.names(oos_data),"penta_F",'C6F5')
   
   print(oos_validation_table(prd.tab))
+  cor_mat
   
   # Final plot with out-of-sample points
   plot + 
@@ -432,6 +441,18 @@ generate_LR_report <- function(dataset,
                              force_pull = 0.01,
                              nudge_y = -0.022,
                              direction = 'y')
+}
+
+generate_cor_mat_LR <- function(data, formula_vars){
+  corrplot::corrplot(
+    stats::cor(data[, colnames(data) %in% formula_vars],
+               method = 'kendall'),
+    method = "circle",     # Use circles for visualization
+    addCoef.col = "black", # Add correlation coefficients in black text
+    tl.col = "black",      # Text label color      # Rotate text labels
+    diag = F,           # Display diagonal elements
+    number.cex = 1       # Size of the number text
+  )
 }
 ```
 
@@ -499,7 +520,7 @@ generate_LR_report(dataset = dataset,
                    leave.out = leave.out,
                    what.model = what.model,
                    save.pred = F,
-                   plot_title = 'Linear Regression Model Analysis')
+                   plot_title = 'LuxR - Linear Regression Model Analysis - Using All Data')
 setwd('../')
 
 ```
@@ -511,8 +532,8 @@ setwd('../')
 setwd('Datasets/')
 ### Classification 
 retrain_best_model('../TraR/Classification_Results/TraR_class_models.csv',
-                   which_model = 1,
-                   title.of.analysis = 'TraR - Classification Reproduction',
+                   which_model = 2,
+                   title.of.analysis = 'TraR - Classification Model',
                    one_ratio = 0.85,
                    two_ratio = 0.65)
 
@@ -542,7 +563,7 @@ setwd('Datasets/')
 ### Classification 
 retrain_best_model('../LasR/Classification_Results/LasR_class_models.csv',
                    which_model = 1,
-                   title.of.analysis = 'LasR - Classification Reproduction',
+                   title.of.analysis = 'LasR - Classification Model',
                    one_ratio = 0.85,
                    two_ratio = 0.65)
 
@@ -550,7 +571,7 @@ retrain_best_model('../LasR/Classification_Results/LasR_class_models.csv',
 leave.out <- c("o_Naph", "p_SCF3", "p_I", "p_Cl", "p_azide") # Validation Set extraction from data
 model.list <- "../LasR/Regression_Results/LasR_above_15_top_models_4_4_LO_5.csv" # List of top-10 models 
 out.col = 'output' # Column name holding output data
-what.model = 1 # Chosen model to reproduce
+what.model = 2 # Chosen model to reproduce
 dataset <- read.csv(model.list)$dataset[what.model] # Call for the feature dataset corresponding with the chosen model
 
 generate_LR_report(dataset = dataset,
@@ -572,7 +593,7 @@ setwd('Datasets/')
 ### Classification 
 retrain_best_model('../LuxR/Classification_Results/LuxR_class_models.csv',
                    which_model = 3,
-                   title.of.analysis = 'LuxR - Classification Reproduction',
+                   title.of.analysis = 'LuxR - Classification Model',
                    one_ratio = 0.75,
                    two_ratio = 0.65)
 
